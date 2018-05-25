@@ -8,37 +8,71 @@ const path = require("path");
 
 let processed = 0;
 
-function convertAllImagesEasyimage(sourceFolder, destinationFolder) {
-    const files = fs.readdirSync(sourceFolder);
-    for (let f of files) {
-        thumbnail({
-            src: path.resolve(__dirname, sourceFolder, f),
-            width: 24,
-            height: 24,
-            quality: 8
-        }).then(info => {
-            console.log(info.path);
-            fs.createReadStream(info.path).pipe(fs.createWriteStream(path.resolve(__dirname, destinationFolder, f)));
-            processed++;
-        }).catch((err) => console.log("Error: ", err));
-    }
-}
+const options = {
+    width: 24,
+    height: 24,
+    quality: 8
+};
 
-function convertAllImagesJimp(sourceFolder, destinationFolder) {
-    const files = fs.readdirSync(sourceFolder);
-    for (let f of files) {
-        jimp.read( path.resolve(sourceFolder, f), (err, data) => {
+function convertAllImages(sourceDir, targetDir, method, opt) {
+    return new Promise((resolve, reject) => {
+        fs.readdir(sourceDir, (err, files) => {
             if (err) {
-                console.log(err);
+                return reject(err.message);
             }
-            data.resize(24, 24,)
-                .quality(10)
-                .dither565()
-                .write(path.resolve(__dirname, destinationFolder, f));
+
+            for (let f of files) {
+                transformImage(f, sourceDir, targetDir, method, opt)
+                    .then(rs => {
+                        saveImage(rs, f, targetDir);
+                        processed++;
+                    });
+            }
         })
+    });
+}
+
+function transformByJimp(f, sourceDir, targetDir, opt) {
+    return new Promise((resolve, reject) => {
+        jimp.read(path.resolve(sourceDir, f), (err, data) => {
+            if (err) {
+                return reject(err);
+            }
+            const jimp = data.resize(opt.width, opt.height)
+                .quality(opt.quality)
+                .dither565();
+            return resolve( fs.createReadStream(jimp.info));
+        })
+    })
+
+}
+
+function transformByEasyimage(f, sourceDir, targetDir, opt) {
+    return thumbnail({
+        src: path.resolve(__dirname, sourceDir, f),
+        width: opt.width,
+        height: opt.height,
+        quality: opt.quality
+    }).then(info => {
+        return fs.createReadStream(info.path);
+    }).catch((err) => console.error("Error: ", err));
+}
+
+function transformImage(f, sourceDir, targetDir, method, opt) {
+    switch (method) {
+        case "easy":
+            return transformByEasyimage(f, sourceDir, targetDir, opt);
+            break;
+        case "jimp":
+            return transformByJimp(f, sourceDir, targetDir, opt);
+            break;
     }
 }
 
-// convertAllImagesEasyimage("./data/big", "./data/small");
+function saveImage(readStream, f, dir) {
+    return readStream.pipe(fs.createWriteStream(path.resolve(__dirname, dir, f)));
+}
 
-convertAllImagesJimp("./data/big", "./data/small");
+convertAllImages("./data/big", "./data/small", "jimp", options)
+    .then(() => console.log(`${processed} images processed.`))
+    .catch(err => console.error(err));
